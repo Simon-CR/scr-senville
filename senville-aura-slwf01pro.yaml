@@ -5,7 +5,8 @@
 #   - Full local UART control (9600 baud) replacing the stock Alexa/OSK103/OSK105 USB-A dongle
 #   - Full MQTT support with Home Assistant MQTT Auto-Discovery (mitsubishi2mqtt style)
 #   - Simultaneous Home Assistant Native API support
-#   - Custom MQTT topics for Follow-Me remote room sensor & front panel LED display toggle
+#   - Discrete vertical/horizontal louver positions, presets, breeze away, and self-clean
+#   - Runtime beeper feedback and power switches, buttons, and custom MQTT topics
 
 substitutions:
   device_name: senville-aura-ac
@@ -16,6 +17,8 @@ esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
   comment: "Senville Aura (Midea OEM) Local MQTT & HA Climate Controller"
+  includes:
+    - includes/midea_ext.h
 
 esp8266:
   board: esp12e
@@ -75,7 +78,7 @@ mqtt:
     payload: offline
 
   on_message:
-    # Publish a temperature in °C (e.g. "21.5") to senville_ac/follow_me/set to override the AC's internal thermistor
+    # Remote room sensor thermistor override (°C, e.g. "21.5")
     - topic: ${mqtt_prefix}/follow_me/set
       then:
         - if:
@@ -89,11 +92,201 @@ mqtt:
                   temperature: !lambda "return parse_number<float>(x).value();"
                   beeper: false
 
-    # Publish any payload (e.g. "TOGGLE") to senville_ac/display/set to toggle the indoor unit's LED display
+    # Indoor unit LED 7-segment readout toggle (payload: "TOGGLE" or any)
     - topic: ${mqtt_prefix}/display/set
       then:
         - midea_ac.display_toggle:
             id: senville_climate
+
+    # Power control (payload: "ON", "OFF", "TOGGLE")
+    - topic: ${mqtt_prefix}/power/set
+      then:
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "ON";
+            then:
+              - midea_ac.power_on:
+                  id: senville_climate
+              - lambda: 'id(ac_power_switch).publish_state(true);'
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "OFF";
+            then:
+              - midea_ac.power_off:
+                  id: senville_climate
+              - lambda: 'id(ac_power_switch).publish_state(false);'
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "TOGGLE";
+            then:
+              - midea_ac.power_toggle:
+                  id: senville_climate
+
+    # Beeper feedback runtime toggle (payload: "ON", "OFF")
+    - topic: ${mqtt_prefix}/beeper/set
+      then:
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "ON";
+            then:
+              - midea_ac.beeper_on:
+                  id: senville_climate
+              - lambda: 'id(ac_beeper_switch).publish_state(true);'
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "OFF";
+            then:
+              - midea_ac.beeper_off:
+                  id: senville_climate
+              - lambda: 'id(ac_beeper_switch).publish_state(false);'
+
+    # Single-step louver swing angle (payload: "STEP" or any)
+    - topic: ${mqtt_prefix}/swing_step/set
+      then:
+        - midea_ac.swing_step:
+            id: senville_climate
+
+    # Vertical Louver discrete angle (payload: "auto", "1".."5", "0", "25", "50", "75", "100")
+    - topic: ${mqtt_prefix}/vertical_position/set
+      then:
+        - lambda: |-
+            std::string p = x;
+            for (auto &c : p) c = ::tolower(c);
+            uint8_t angle = 0;
+            std::string opt = "Auto Swing";
+            if (p == "auto" || p == "0" || p.find("auto") != std::string::npos) {
+              angle = 0; opt = "Auto Swing";
+            } else if (p == "1" || p == "top" || p.find("top") != std::string::npos) {
+              angle = 1; opt = "1 - Top (0°)";
+            } else if (p == "2" || p == "25" || p.find("upper") != std::string::npos) {
+              angle = 25; opt = "2 - Upper (25%)";
+            } else if (p == "3" || p == "50" || p.find("middle") != std::string::npos) {
+              angle = 50; opt = "3 - Middle (50%)";
+            } else if (p == "4" || p == "75" || p.find("lower") != std::string::npos) {
+              angle = 75; opt = "4 - Lower (75%)";
+            } else if (p == "5" || p == "100" || p.find("bottom") != std::string::npos) {
+              angle = 100; opt = "5 - Bottom (90%)";
+            }
+            send_midea_b0_property(id(midea_uart), MIDEA_PROP_VERT_SWING_ANGLE, angle);
+            id(vert_swing_select).publish_state(opt);
+
+    # Horizontal Louver discrete angle (payload: "auto", "1".."5", "0", "25", "50", "75", "100")
+    - topic: ${mqtt_prefix}/horizontal_position/set
+      then:
+        - lambda: |-
+            std::string p = x;
+            for (auto &c : p) c = ::tolower(c);
+            uint8_t angle = 0;
+            std::string opt = "Auto Swing";
+            if (p == "auto" || p == "0" || p.find("auto") != std::string::npos) {
+              angle = 0; opt = "Auto Swing";
+            } else if (p == "1" || p.find("far left") != std::string::npos) {
+              angle = 1; opt = "1 - Far Left";
+            } else if (p == "2" || p == "25" || p.find("mid left") != std::string::npos) {
+              angle = 25; opt = "2 - Mid Left";
+            } else if (p == "3" || p == "50" || p.find("center") != std::string::npos) {
+              angle = 50; opt = "3 - Center";
+            } else if (p == "4" || p == "75" || p.find("mid right") != std::string::npos) {
+              angle = 75; opt = "4 - Mid Right";
+            } else if (p == "5" || p == "100" || p.find("far right") != std::string::npos) {
+              angle = 100; opt = "5 - Far Right";
+            }
+            send_midea_b0_property(id(midea_uart), MIDEA_PROP_HORIZ_SWING_ANGLE, angle);
+            id(horiz_swing_select).publish_state(opt);
+
+    # Preset mode selection (payload: "NONE", "ECO", "BOOST", "SLEEP", "FREEZE_PROTECTION")
+    - topic: ${mqtt_prefix}/preset/set
+      then:
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "NONE" || p == "OFF";
+            then:
+              - climate.control:
+                  id: senville_climate
+                  preset: "NONE"
+              - lambda: 'id(preset_mode_select).publish_state("None");'
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "ECO";
+            then:
+              - climate.control:
+                  id: senville_climate
+                  preset: "ECO"
+              - lambda: 'id(preset_mode_select).publish_state("Eco");'
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "BOOST";
+            then:
+              - climate.control:
+                  id: senville_climate
+                  preset: "BOOST"
+              - lambda: 'id(preset_mode_select).publish_state("Boost");'
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "SLEEP";
+            then:
+              - climate.control:
+                  id: senville_climate
+                  preset: "SLEEP"
+              - lambda: 'id(preset_mode_select).publish_state("Sleep");'
+        - if:
+            condition:
+              lambda: |-
+                std::string p = x;
+                for (auto &c : p) c = ::toupper(c);
+                return p == "FREEZE_PROTECTION" || p == "FREEZE PROTECTION";
+            then:
+              - climate.control:
+                  id: senville_climate
+                  custom_preset: "FREEZE_PROTECTION"
+              - lambda: 'id(preset_mode_select).publish_state("Freeze Protection");'
+
+    # Breeze Away / Indirect Wind toggle (payload: "ON", "OFF")
+    - topic: ${mqtt_prefix}/breeze_away/set
+      then:
+        - lambda: |-
+            std::string p = x;
+            for (auto &c : p) c = ::toupper(c);
+            if (p == "ON" || p == "1" || p == "TRUE") {
+              send_midea_b0_property(id(midea_uart), MIDEA_PROP_BREEZE_AWAY, 2);
+              id(breeze_away_switch).publish_state(true);
+            } else if (p == "OFF" || p == "0" || p == "FALSE") {
+              send_midea_b0_property(id(midea_uart), MIDEA_PROP_BREEZE_AWAY, 1);
+              id(breeze_away_switch).publish_state(false);
+            }
+
+    # Start indoor evaporator self-clean defrost cycle (payload: "START")
+    - topic: ${mqtt_prefix}/self_clean/set
+      then:
+        - lambda: |-
+            send_midea_b0_property(id(midea_uart), MIDEA_PROP_SELF_CLEAN, 1);
 
 # Midea / Senville Aura Climate Entity
 climate:
@@ -106,6 +299,7 @@ climate:
     num_attempts: 3
     autoconf: true
     beeper: false
+    display_control: AUTO
 
     supported_modes:
       - "OFF"
@@ -145,7 +339,142 @@ climate:
       name: "Humidity Setpoint"
       id: humidity_target
 
-# Button Entity (exposed in HA & MQTT) to toggle the Senville Aura front-panel LED readout
+# Select Entities (HA & MQTT) for discrete positions and presets
+select:
+  - platform: template
+    name: "Vertical Louver Position"
+    id: vert_swing_select
+    icon: "mdi:arrow-up-down"
+    optimistic: true
+    options:
+      - "Auto Swing"
+      - "1 - Top (0°)"
+      - "2 - Upper (25%)"
+      - "3 - Middle (50%)"
+      - "4 - Lower (75%)"
+      - "5 - Bottom (90%)"
+    initial_option: "Auto Swing"
+    set_action:
+      - lambda: |-
+          uint8_t angle = 0;
+          if (x == "1 - Top (0°)") angle = 1;
+          else if (x == "2 - Upper (25%)") angle = 25;
+          else if (x == "3 - Middle (50%)") angle = 50;
+          else if (x == "4 - Lower (75%)") angle = 75;
+          else if (x == "5 - Bottom (90%)") angle = 100;
+          send_midea_b0_property(id(midea_uart), MIDEA_PROP_VERT_SWING_ANGLE, angle);
+
+  - platform: template
+    name: "Horizontal Louver Position"
+    id: horiz_swing_select
+    icon: "mdi:arrow-left-right"
+    optimistic: true
+    options:
+      - "Auto Swing"
+      - "1 - Far Left"
+      - "2 - Mid Left"
+      - "3 - Center"
+      - "4 - Mid Right"
+      - "5 - Far Right"
+    initial_option: "Auto Swing"
+    set_action:
+      - lambda: |-
+          uint8_t angle = 0;
+          if (x == "1 - Far Left") angle = 1;
+          else if (x == "2 - Mid Left") angle = 25;
+          else if (x == "3 - Center") angle = 50;
+          else if (x == "4 - Mid Right") angle = 75;
+          else if (x == "5 - Far Right") angle = 100;
+          send_midea_b0_property(id(midea_uart), MIDEA_PROP_HORIZ_SWING_ANGLE, angle);
+
+  - platform: template
+    name: "Preset Mode"
+    id: preset_mode_select
+    icon: "mdi:tune"
+    optimistic: true
+    options:
+      - "None"
+      - "Eco"
+      - "Boost"
+      - "Sleep"
+      - "Freeze Protection"
+    initial_option: "None"
+    set_action:
+      - if:
+          condition:
+            lambda: 'return x == "None";'
+          then:
+            - climate.control:
+                id: senville_climate
+                preset: "NONE"
+      - if:
+          condition:
+            lambda: 'return x == "Eco";'
+          then:
+            - climate.control:
+                id: senville_climate
+                preset: "ECO"
+      - if:
+          condition:
+            lambda: 'return x == "Boost";'
+          then:
+            - climate.control:
+                id: senville_climate
+                preset: "BOOST"
+      - if:
+          condition:
+            lambda: 'return x == "Sleep";'
+          then:
+            - climate.control:
+                id: senville_climate
+                preset: "SLEEP"
+      - if:
+          condition:
+            lambda: 'return x == "Freeze Protection";'
+          then:
+            - climate.control:
+                id: senville_climate
+                custom_preset: "FREEZE_PROTECTION"
+
+# Switch Entities (HA & MQTT) for Power, Beeper Feedback, and Breeze Away
+switch:
+  - platform: template
+    name: "Power"
+    id: ac_power_switch
+    icon: "mdi:power"
+    optimistic: true
+    turn_on_action:
+      - midea_ac.power_on:
+          id: senville_climate
+    turn_off_action:
+      - midea_ac.power_off:
+          id: senville_climate
+
+  - platform: template
+    name: "Beeper Feedback"
+    id: ac_beeper_switch
+    icon: "mdi:volume-high"
+    optimistic: true
+    turn_on_action:
+      - midea_ac.beeper_on:
+          id: senville_climate
+    turn_off_action:
+      - midea_ac.beeper_off:
+          id: senville_climate
+
+  - platform: template
+    name: "Breeze Away (Indirect Wind)"
+    id: breeze_away_switch
+    icon: "mdi:weather-windy"
+    optimistic: true
+    turn_on_action:
+      - lambda: |-
+          send_midea_b0_property(id(midea_uart), MIDEA_PROP_BREEZE_AWAY, 2);
+    turn_off_action:
+      - lambda: |-
+          send_midea_b0_property(id(midea_uart), MIDEA_PROP_BREEZE_AWAY, 1);
+
+# Button Entities (HA & MQTT) for instant actions and diagnostics
 button:
   - platform: template
     name: "Toggle Display LED"
@@ -154,6 +483,30 @@ button:
     on_press:
       - midea_ac.display_toggle:
           id: senville_climate
+
+  - platform: template
+    name: "Louver Swing Step"
+    id: swing_step_btn
+    icon: "mdi:arrow-split-horizontal"
+    on_press:
+      - midea_ac.swing_step:
+          id: senville_climate
+
+  - platform: template
+    name: "Power Toggle"
+    id: power_toggle_btn
+    icon: "mdi:power"
+    on_press:
+      - midea_ac.power_toggle:
+          id: senville_climate
+
+  - platform: template
+    name: "Start Self-Clean Cycle"
+    id: self_clean_btn
+    icon: "mdi:broom"
+    on_press:
+      - lambda: |-
+          send_midea_b0_property(id(midea_uart), MIDEA_PROP_SELF_CLEAN, 1);
 
   - platform: restart
     name: "Restart Dongle"
