@@ -32,7 +32,10 @@ Instead, Midea wired the 4-pin USB-A receptacle directly to a **5V TTL Serial UA
 
 ## 2. Firmware Architecture & Files
 
-1. **[`senville-aura-slwf01pro.yaml`](./senville-aura-slwf01pro.yaml)**: For pre-built USB-A Midea dongles (`SMLIGHT SLWF-01pro`, `CloudFree`, `iot-uni-dongle`) and `ESP-01S` (`GPIO1` TX / `GPIO3` RX).
+1. **[`senville-aura-slwf01pro.yaml`](./senville-aura-slwf01pro.yaml)**: For pre-built USB-A Midea dongles (`SMLIGHT SLWF-01pro`, `CloudFree`, `iot-uni-dongle`) and `ESP-01S`:
+   - `SLWF-01pro v1.0` / `CloudFree` / `iot-uni-dongle` / `ESP-01S`: `GPIO1` TX / `GPIO3` RX (hardware `UART0`, requires `logger: baud_rate: 0`).
+   - `SLWF-01pro v2.1`: `GPIO12` TX / `GPIO14` RX, plus an onboard IR transmitter path on `GPIO13`.
+   - Exposes Home Assistant action `follow_me` (`temperature: float`, `use_fahrenheit: bool`) in addition to the MQTT `follow_me/set` topic.
 2. **[`senville-aura-esp32c3.yaml`](./senville-aura-esp32c3.yaml)**: For DIY `Seeed Studio XIAO ESP32C3` / `ESP32-C3 SuperMini` builds (`GPIO21` TX / `GPIO20` RX).
 3. **[`includes/midea_ext.h`](./includes/midea_ext.h)**: Modular C++ helper implementing the Midea `0xB0` Set Property frame builder with Dallas/Maxim 1-Wire CRC8 table and two's-complement checksum calculation.
 4. **[`secrets.yaml.example`](./secrets.yaml.example)**: Template for Wi-Fi, OTA, and MQTT broker credentials.
