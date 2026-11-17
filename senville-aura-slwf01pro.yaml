@@ -28,6 +28,17 @@ api:
   encryption:
     key: !secret api_encryption_key
   reboot_timeout: 0s
+  actions:
+    - action: follow_me
+      variables:
+        temperature: float
+        use_fahrenheit: bool
+      then:
+        - midea_ac.follow_me:
+            id: senville_climate
+            temperature: !lambda "return temperature;"
+            use_fahrenheit: !lambda "return use_fahrenheit;"
+            beeper: false
 
 ota:
   - platform: esphome
@@ -48,18 +59,26 @@ web_server:
   port: 80
   version: 2
 
-# IMPORTANT: baud_rate MUST be 0 on ESP8266 because the Midea USB-A port uses hardware UART0 (GPIO1/GPIO3)
+# IMPORTANT: baud_rate MUST be 0 on ESP8266 when the Midea UART uses hardware UART0 (GPIO1/GPIO3)
 logger:
   level: INFO
   baud_rate: 0
 
-# Hardware UART0 connected to the Senville Aura USB-A port (via internal 5V<->3.3V level shifter)
-# USB-A Pin 1: +5V | Pin 2 (D-): AC TX -> ESP RX (GPIO3) | Pin 3 (D+): AC RX <- ESP TX (GPIO1) | Pin 4: GND
+# UART connected to the Senville Aura USB-A port (via internal 5V<->3.3V level shifter)
+# - SMLIGHT SLWF-01pro v1.0 / CloudFree / iot-uni-dongle / ESP-01S:
+#     USB-A Pin 1: +5V | Pin 2 (D-): AC TX -> ESP RX (GPIO3) | Pin 3 (D+): AC RX <- ESP TX (GPIO1) | Pin 4: GND
+# - SMLIGHT SLWF-01pro v2.1:
+#     tx_pin: GPIO12 | rx_pin: GPIO14 | optional IR remote_transmitter pin: GPIO13 (carrier_duty_percent: 100%)
 uart:
   id: midea_uart
-  tx_pin: GPIO1
-  rx_pin: GPIO3
+  tx_pin: GPIO1   # Use GPIO12 for SMLIGHT SLWF-01pro v2.1
+  rx_pin: GPIO3   # Use GPIO14 for SMLIGHT SLWF-01pro v2.1
   baud_rate: 9600
+
+# Optional for SMLIGHT SLWF-01pro v2.1 direct IR wire / Follow-Me fallback:
+# remote_transmitter:
+#   pin: GPIO13
+#   carrier_duty_percent: 100%
 
 # MQTT Client (mirrors mitsubishi2mqtt behavior with Home Assistant Auto-Discovery + custom topics)
 mqtt:
@@ -299,7 +318,6 @@ climate:
     num_attempts: 3
     autoconf: true
     beeper: false
-    display_control: AUTO
 
     supported_modes:
       - "OFF"
