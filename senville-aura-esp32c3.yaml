@@ -301,7 +301,6 @@ climate:
     num_attempts: 3
     autoconf: true
     beeper: false
-    display_control: AUTO
 
     supported_modes:
       - "OFF"

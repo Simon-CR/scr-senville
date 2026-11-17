@@ -59,7 +59,6 @@ The configuration exposes 100% of controllable Senville Aura / Midea OEM capabil
 - **Swing Modes**: `OFF`, `VERTICAL`, `HORIZONTAL`, `BOTH`
 - **Presets**: `ECO`, `BOOST`, `SLEEP`, `FREEZE_PROTECTION` (8°C / 46°F freeze guard)
 - **Fan Modes**: `SILENT`, `TURBO`
-- **Display Control**: `AUTO` (Hardware display toggle integration)
 
 ### Select Entities (`select:`)
 - **Vertical Louver Position**: `Auto Swing`, `1 - Top (0°)`, `2 - Upper (25%)`, `3 - Middle (50%)`, `4 - Lower (75%)`, `5 - Bottom (90°)` (Midea Property `0x0009`)
